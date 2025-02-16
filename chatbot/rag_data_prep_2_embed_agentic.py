@@ -136,12 +136,11 @@ def cohere_agent_with_memory(query):
 
     cohere_response = cohere_agent(full_prompt)
 
-    response_text = cohere_response.generations[0].text
-    memory.add(query, response_text)
+    memory.add(query, cohere_response)
 
-    self_evaluate(response_text)
+    self_evaluate(cohere_response)
     
-    return response_text
+    return cohere_response
 
 
 # Self-Reflection
@@ -159,8 +158,12 @@ def take_autonomous_action(query):
 def self_evaluate(response):
     critique_prompt = f"Evaluate this response on a scale of 1-10, where 10 is perfect and 1 is very poor:\n{response}\nScore:"
 
-    critique = cohere_agent_with_memory(critique_prompt)
-
+    critique = co.generate(
+        model="command-r-plus-08-2024",
+        prompt=f"Query: {critique_prompt}",
+        max_tokens=150,
+    )
+    print("Critique: ", critique)
     score = int(critique.generations[0].text.strip())
 
     return score
