@@ -101,7 +101,7 @@ def cohere_agent(query):
     cohere_response = co.generate(
         model="command-r-plus-08-2024",
         prompt=f"{system_prompt}\n\nQuery: {query}\nSales Data:\n{retrieved_data}\n\nProvide recommendations:",
-        max_tokens=150,
+        max_tokens=1000,
     )
     
     return cohere_response.generations[0].text
@@ -161,7 +161,7 @@ def self_evaluate(response):
     critique = co.generate(
         model="command-r-plus-08-2024",
         prompt=f"Query: {critique_prompt}",
-        max_tokens=150,
+        max_tokens=1000,
     )
     print("Critique: ", critique)
     score = int(critique.generations[0].text.strip())
@@ -196,14 +196,14 @@ def cohere_analyzer(data):
     return co.generate(
         model="command-r-plus-08-2024",
         prompt=f"Analyze this data and extract key sales trends:\n{data}",
-        max_tokens=150,
+        max_tokens=1000,
     ).generations[0].text
 
 def cohere_strategist(analysis):
     return co.generate(
         model="command-r-plus-08-2024",
         prompt=f"Based on this analysis, recommend a sales strategy:\n{analysis}",
-        max_tokens=150,
+        max_tokens=1000,
     ).generations[0].text
 
 def run_multi_agent(query):

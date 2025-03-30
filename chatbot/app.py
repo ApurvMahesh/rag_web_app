@@ -6,7 +6,8 @@ import re
 app = Flask(__name__)
 
 # Initialize the Cohere client with your API key
-co = cohere.Client('')
+co = cohere.Client('2QqVvvlG7rs36B51L96YXShsV5hMYw2BV8QS1rqi')
+
 
 # Create an empty list to store chat history
 app.secret_key = '5t7678634g798798374'  # Make sure to change this
