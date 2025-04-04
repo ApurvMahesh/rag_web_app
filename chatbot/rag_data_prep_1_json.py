@@ -1,96 +1,73 @@
 import pandas as pd
-import json
+from sqlalchemy import create_engine
 
-# Load the synthetic dataset
-df = pd.read_csv("synthetic_sales_data_enriched.csv")
 
-# Convert each row into a JSON document
-documents = []
-for _, row in df.iterrows():
-    document = {
-        "Date": row["Date"],
-        "Region": row["Region"],
-        "Product Category": row["Product Category"],
-        "Product ID": row["Product ID"],
-        "Brand": row["Brand"],
-        "Item Size": row["Item Size"],
-        "Units Sold": row["Units Sold"],
-        "Unit Price": row["Unit Price"],
-        "Discount Offered (%)": row["Discount Offered (%)"],
-        "Marketing Spend ($)": row["Marketing Spend ($)"],
-        "Customer Segment": row["Customer Segment"],
-        "Sales Origin": row["Sales Origin"],
-        "Payment Method": row["Payment Method"],
-        "Total Revenue ($)": row["Total Revenue ($)"],
-    }
-    documents.append(document)
+# Load the dataset
+def load_and_enrich_data():
+    df = pd.read_csv("synthetic_sales_data_enriched.csv")
 
-# Save documents as JSON
-with open("sales_data_documents.json", "w") as f:
-    json.dump(documents, f, indent=4)
+    # Define SQLite database (You can switch to PostgreSQL or MySQL if needed)
+    engine = create_engine("sqlite:///sales_data.db")
 
-print("Sales data has been converted into JSON documents and saved.")
+    # Store data in SQL database
+    df.to_sql("sales", con=engine, if_exists="replace", index=False)
+
+    print("Sales data has been successfully stored in the SQL database.")
 
 
 
-# Generate Embeddings
-##########################
+# Define query function
+def query_sales_db(query):
+    engine = create_engine("sqlite:///sales_data.db")
+    with engine.connect() as connection:
+        result = pd.read_sql(query, connection)
+    return result
 
-from sentence_transformers import SentenceTransformer
+# def query_db_info():
+#     engine = create_engine("sqlite:///sales_data.db")
 
-# Load pre-trained embedding model
-model = SentenceTransformer('all-MiniLM-L6-v2')
+#     with engine.connect() as connection:
+#         result = connection.exec_driver_sql(f"PRAGMA table_info(sales)")  # ✅ Corrected
+#         columns = result.fetchall()
 
-# Convert documents to textual representations
-texts = [json.dumps(doc) for doc in documents]
-
-# Generate embeddings
-embeddings = model.encode(texts, convert_to_tensor=True)
-
-# Save embeddings for later use
-import torch
-torch.save(embeddings, "sales_data_embeddings.pt")
-print("Embeddings generated and saved.")
-
-
-# Setting Up Vector DB
-##########################
-
-import faiss
-import numpy as np
-
-# Convert embeddings to NumPy array
-embeddings_np = embeddings.cpu().numpy()
-
-# Create FAISS index
-dimension = embeddings_np.shape[1]
-index = faiss.IndexFlatL2(dimension)
-index.add(embeddings_np)
-
-# Save FAISS index
-faiss.write_index(index, "sales_data_index.faiss")
-print("FAISS index created and saved.")
-
-
-# Define Query Logic
-########################
-def retrieve_similar_documents(query, model, index, documents, top_k=5):
-    # Generate embedding for the query
-    query_embedding = model.encode([query], convert_to_tensor=True).cpu().numpy()
+#     # Format the output as a string
+#     schema_info = "\n".join([f"Column Name: {col[1]}, Data Type: {col[2]}" for col in columns])
     
-    # Search for top-k similar documents
-    distances, indices = index.search(query_embedding, top_k)
-    
-    # Return the matching documents
-    results = [documents[idx] for idx in indices[0]]
-    return results
+#     return schema_info
 
-# Example query
-query = "Sales trends for Electronics in North region"
-results = retrieve_similar_documents(query, model, index, documents)
-for i, result in enumerate(results):
-    print(f"Result {i+1}:", result)
-print("\n\nVerified the query format is working as expected with indexed search FAISS library\n\n")
+def query_db_info():
+    engine = create_engine("sqlite:///sales_data.db")
 
+    with engine.connect() as connection:
+        # Get column names and types
+        result = connection.exec_driver_sql("PRAGMA table_info(sales)")
+        columns = result.fetchall()
 
+        # Get sample data (limit 5 rows)
+        data_result = connection.exec_driver_sql("SELECT * FROM sales LIMIT 5")
+        sample_data = data_result.fetchall()
 
+    # Format schema details
+    schema_info = "\n".join([
+        f"Column Name: {col[1]}, Data Type: {col[2]}"
+        for col in columns
+    ])
+
+    # Format sample data
+    sample_data_str = "\n".join([str(row) for row in sample_data])
+
+    # Combine schema and sample data
+    full_info = f"Schema Information:\n{schema_info}\n\nSample Data:\n{sample_data_str}"
+
+    return full_info
+# Example Query: Get all sales in the "Electronics" category from the "North" region
+# query = """
+# SELECT * FROM sales 
+# WHERE "Product Category" = 'Electronics' 
+# AND Region = 'North'
+# """
+
+# Run query
+# result_df = query_sales_db(query, engine)
+# print(result_df.head())  # Display results
+# load_and_enrich_data()

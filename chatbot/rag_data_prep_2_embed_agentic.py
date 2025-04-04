@@ -1,94 +1,40 @@
 
 from sentence_transformers import SentenceTransformer
-import faiss
-import json
 from transformers import pipeline
-import torch
 
 
-# Load embeddings, documents, and FAISS index
-embeddings = torch.load("sales_data_embeddings.pt")
-index = faiss.read_index("sales_data_index.faiss")
-with open("sales_data_documents.json", "r") as f:
-    documents = json.load(f)
+from transformers import pipeline
+import cohere
+from rag_data_prep_1_json import query_sales_db  # Import your SQL-based query function
 
-# Load the generator (e.g., OpenAI's GPT or HuggingFace)
+# Load the generator model (e.g., OpenAI's GPT or HuggingFace)
 generator = pipeline("text2text-generation", model="t5-large")
 
-# Define the retrieval function
-def retrieve_documents(query, model, index, documents, top_k=5):
-    # Generate query embedding
-    query_embedding = model.encode([query], convert_to_tensor=True).cpu().numpy()
-    distances, indices = index.search(query_embedding, top_k)
-    results = [documents[idx] for idx in indices[0]]
+# Initialize Cohere
+co = cohere.Client('2QqVvvlG7rs36B51L96YXShsV5hMYw2BV8QS1rqi')
+
+
+# **New retrieval function using SQL instead of FAISS**
+def retrieve_sales_data(query):
+    results = query_sales_db(query)  # Query the SQL database
+    print("Retrieved Sales Data:", results)
     return results
 
 
-# Build RAG Model
-####################
-import cohere
-
-co = cohere.Client('2QqVvvlG7rs36B51L96YXShsV5hMYw2BV8QS1rqi')
-
-def rag_pipeline(query, retriever_model, index, documents, generator_model, top_k=5):
-    # Retrieve relevant documents
-    retrieved_docs = retrieve_documents(query, retriever_model, index, documents, top_k)
-    
-    # Debug retrieved documents
-    print("Retrieved Documents:")
-    for doc in retrieved_docs:
-        print(doc)
+# **RAG Pipeline using SQL retrieval**
+def rag_pipeline(query, generator_model):
+    retrieved_data = retrieve_sales_data(query)
     
     # Format retrieved documents into context
-    context = "\n".join(
-        [f"- {doc['Region']} region sold {doc['Units Sold']} units of {doc['Brand']} {doc['Product Category']} on {doc['Date']}." for doc in retrieved_docs]
-    )
-    
-    # # Create generator input
-    # input_text = (
-    #     f"Query: {query}\n"
-    #     f"Relevant Context:\n{context}\n\n"
-    #     "Provide actionable insights based on the query and context.\n\n"
-    # )
-    
-    # # Debug input to generator
-    # print("Final Input to Generator:")
-    # print(input_text)
-    
-    # # Generate response
-    # # response = generator_model(input_text, max_length=1000, do_sample=True)[0]['generated_text']
-    # response = co.generate(
-    #     model="command-r-plus-08-2024",
-    #     prompt= input_text,
-    #     max_tokens=50
-    # );
+    context = "\n".join([
+        f"- {row['Region']} region sold {row['Units Sold']} units of {row['Brand']} {row['Product Category']} on {row['Date']}."
+        for row in retrieved_data
+    ])
+
     return context
 
-# Example query
-query = "What marketing strategies should I use for Electronics in the North region?"
 
-def getResponseForTheQueryText(query):
-    response = rag_pipeline(query, SentenceTransformer('all-MiniLM-L6-v2'), index, documents, generator)
-    print("Generated Context : ", response)
-    return response
-
-
-# response = rag_pipeline(query, SentenceTransformer('all-MiniLM-L6-v2'), index, documents, generator)
-# print("Generated Response : ", response)
-
-
-
-
-
-
-
-
-
-def retrieve_sales_data(query):
-    response = rag_pipeline(query, SentenceTransformer('all-MiniLM-L6-v2'), index, documents, generator)
-    print("retrieved sales data")
-    return response
-
+# **Cohere AI Agent using SQL data retrieval**
 def cohere_agent(query):
     system_prompt = (
         "You are an AI sales assistant with access to real-time e-commerce data. "
@@ -97,14 +43,75 @@ def cohere_agent(query):
     )
 
     retrieved_data = retrieve_sales_data(query)
-    
+
     cohere_response = co.generate(
         model="command-r-plus-08-2024",
         prompt=f"{system_prompt}\n\nQuery: {query}\nSales Data:\n{retrieved_data}\n\nProvide recommendations:",
         max_tokens=1000,
     )
-    
+
     return cohere_response.generations[0].text
+
+
+# **Run Multi-Agent Workflow with SQL Retrieval**
+def run_multi_agent(query):
+    print("Running multi-agent workflow...")
+    retrieved = retrieve_sales_data(query)
+    analysis = co.generate(
+        model="command-r-plus-08-2024",
+        prompt=f"Analyze this data and extract key sales trends:\n{retrieved}",
+        max_tokens=1000,
+    ).generations[0].text
+
+    strategy = co.generate(
+        model="command-r-plus-08-2024",
+        prompt=f"Based on this analysis, recommend a sales strategy:\n{analysis}",
+        max_tokens=1000,
+    ).generations[0].text
+
+    return strategy
+
+
+# **Test Example Query**
+# query = """
+# SELECT * FROM sales 
+# WHERE "Product Category" = 'Electronics' 
+# AND Region = 'North'
+# """
+# # query = "What marketing strategies should I use for Electronics in the North region?"
+# response = cohere_agent(query)
+# print("Generated Response:", response)
+
+
+
+
+
+
+
+
+
+
+# def retrieve_sales_data(query):
+#     response = rag_pipeline(query, SentenceTransformer('all-MiniLM-L6-v2'), index, documents, generator)
+#     print("retrieved sales data")
+#     return response
+
+# def cohere_agent(query):
+#     system_prompt = (
+#         "You are an AI sales assistant with access to real-time e-commerce data. "
+#         "Your job is to analyze sales trends, identify patterns, and recommend strategies. "
+#         "Use the retrieved data to generate actionable insights."
+#     )
+
+#     retrieved_data = retrieve_sales_data(query)
+    
+#     cohere_response = co.generate(
+#         model="command-r-plus-08-2024",
+#         prompt=f"{system_prompt}\n\nQuery: {query}\nSales Data:\n{retrieved_data}\n\nProvide recommendations:",
+#         max_tokens=1000,
+#     )
+    
+#     return cohere_response.generations[0].text
 
 import pickle
 

@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, session
 import cohere  # Replace with OpenAI or other APIs if needed
 import rag_data_prep_2_embed_agentic
+import rag_data_prep_1_json
 import re
 
 app = Flask(__name__)
@@ -35,44 +36,43 @@ def needs_context(query):
 
 @app.route('/ask', methods=['POST'])
 def ask():
-    user_input = request.form['user_input']
-
-     # Conditionally add context to the prompt based on the query
-    if needs_context(user_input):
-        # If context is needed, add it to the prompt
-        prompt = (
-            f"Query: {user_input}\n"
-            f"Relevant Context:\n{rag_data_prep_2_embed_agentic.getResponseForTheQueryText(user_input)}\n\n"
-            "Provide actionable insights based on the query and context.\n\n"
-            )
-        max_tokens = 1000
-    else:
-        # If no context is needed, provide only the query
-        prompt = f"Query: {user_input}"
-        max_tokens = 100
-
-    # Send user input to Cohere API and get response
-    if needs_context(user_input):
-        response = rag_data_prep_2_embed_agentic.feedback_loop(prompt)
-    else:
-        response = co.generate(
-            model='command-r-plus-08-2024',  # Specify your desired model
-            prompt=prompt,
-            max_tokens=max_tokens
-        )
-        response = response.generations[0].text.strip()
-
-      #     # Get the generated text
-      #     chatbot_response = response.generations[0].text.strip()
-
-      #     # Append the user input and chatbot response to chat history
-      #     chat_history.append({"user": user_input, "bot": chatbot_response})
-
-      #     return render_template('index.html', chat_history=chat_history)
-      # Store chat history in session
     if 'chat_history' not in session:
         session['chat_history'] = []
 
+    user_input = request.form['user_input']
+    schema = rag_data_prep_1_json.query_db_info()
+    print("Schema:", schema)
+    promptFirst = f"Query: The User Input Query Is {user_input}, reformat the user query to keep it short and sensible. Context: {session['chat_history']}, TableName: sales, sales: {schema} is just to show the data column names and the type of data stored"
+    firstResponse = co.generate(
+            model='command-r-plus-08-2024',  # Specify your desired model
+            prompt=promptFirst,
+            max_tokens=1000
+        )
+    firstResponse = firstResponse.generations[0].text.strip()
+    print("firstResponse:", firstResponse)
+    prompt = f"Query: The User Input Query Is {firstResponse}, if the query needs data from db, return only the sql query in the output based on table schema & data type given or if the sql query can not be generated then return NO. Try your best to generate SQL query rather than saying NO, Context: {session['chat_history']}, TableName: sales, sales: {schema} is just to show the data column names and the type of data stored"
+    midResponse = co.generate(
+            model='command-r-plus-08-2024',  # Specify your desired model
+            prompt=prompt,
+            max_tokens=1000
+        )
+    midResponse = midResponse.generations[0].text.strip()
+    print("Mid Response:", midResponse)
+    if(midResponse == "NO"):    
+        prompt = f"Query: The User Input Query Is {user_input}, Context: {session['chat_history']}"
+    else:
+        midResponse = midResponse.replace("```sql", "").strip()
+        midResponse = midResponse.replace("```", "").strip()
+        print(midResponse)
+        data = rag_data_prep_1_json.query_sales_db(midResponse)
+        print("Data:", data)
+        prompt = f"Query: The User Input Query Is {user_input}, Context: {session['chat_history']}, Data: {data}"
+    response = co.generate(
+            model='command-r-plus-08-2024',  # Specify your desired model
+            prompt=prompt,
+            max_tokens=1000
+        )
+    response = response.generations[0].text.strip()
     chatbot_response = response
     session['chat_history'].append({"user": user_input, "bot": chatbot_response})
     session.modified = True  # Mark session as modified so that Flask saves it
